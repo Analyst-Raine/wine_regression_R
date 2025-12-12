@@ -1,6 +1,6 @@
 ---
 title: <center><b> Predicting White Wine Alcohol Content and Quality from Physicochemical Properties</b></center>
-author: <center><b> Laraine Ukwu-George  </b></center>
+author: <center><b> Raine </b></center>
 date: <center><b> 30/11/2025</b></center>
 output:
   
