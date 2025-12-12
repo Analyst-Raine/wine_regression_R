@@ -1,0 +1,1161 @@
+---
+title: <center><b> Predicting White Wine Alcohol Content and Quality from Physicochemical Properties</b></center>
+author: <center><b> Laraine Ukwu-George  </b></center>
+date: <center><b> 30/11/2025</b></center>
+output:
+  
+  prettydoc::html_pretty:
+    theme: hpstr
+    highlight: github
+    number_sections: false
+  always_allow_html: true
+bibliography: references.bib
+---
+
+```{=html}
+<style>
+.entry-content {
+max-width: 1200px; 
+margin-left: auto;
+margin-right: auto;
+padding: 50px 80px;
+}
+p{
+text-align: justify;
+}
+</style>
+
+```
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE, fig.width = 8, fig.height = 5, include = FALSE)
+# Load libraries
+library(DataExplorer)
+library(corrplot)
+library(MASS)
+library(moments)
+library(tidyverse)
+library(caret)
+library(kableExtra)
+library(knitr)
+library(pROC)
+library(DT)
+library(GGally)
+library(gt)
+library(ggfortify)
+library(broom)
+library(car)
+library(janitor)
+library(ggpubr)
+library(ggpmisc)
+library(summarytools)
+library(patchwork)
+library(DiagrammeR)
+library(bookdown)
+
+
+```
+
+
+
+
+# Main Findings
+- Alcohol content was the strongest predictor of wine quality (r = 0.46, p < 0.001), followed by density (r = -0.32) and chlorides (r = -0.19). pH and citric acid had minimal impact on quality.
+- Multicollinearity was identified between density and residual sugar (r = 0.79), and density and total sulfur dioxide (r = 0.51). These variables were removed, achieving VIF < 5 for all remaining predictors.
+- Based on the simple linear model alcohol = 348.032 - 339.562 * density, 60% of alcohol content variability is explained by density. With p-value < 0.05, the negative relationship is significant, however the model failed the linearity test due to alcohol's non-normal distribution.
+- With adjusted $R^2$ = 0.71 (AIC = 1015.55), the best multiple linear regression model was alcohol = 296.67 + 0.135 * fixed.acidity + 1.439 * volatile.acidity + 0.661 * citric.acid - 11.454 * chlorides - 293.605 * density + 0.897 * pH + 0.309 * quality. Density was the dominant predictor ($\beta$ = -293.61, p < 0.001).
+- The best logistic model for predicting good and bad wines (AIC = 526.39) was log(p/1-p) = -8.731 - 4.615 * volatile.acidity + 7.739 * chlorides + 1.001 * alcohol. Alcohol was the most significant predictor while chlorides were not significant (p > 0.05). Each unit increase in alcohol raised odds of good quality by 118-245%, while increases in volatile acidity decreased odds by 89-100%.
+- Confusion matrix showed 286 true positives and 83 true negatives (accuracy = 73.8%, sensitivity = 0.85, specificity = 0.50), indicating better classification performance for good wines than poor wines, likely arising from the 67:33 class imbalance in the sample.
+- Binary quality classification achieved 73.8% accuracy with Kappa = 0.376, indicating the model performs 37.6% better than random guessing. The modest Kappa value suggests room for improvement with larger and more balanced sample sizes.
+- Physicochemical properties, particularly alcohol content and density, provide objective predictors of wine quality, validating the use of laboratory measurements for quality assessment.
+
+
+# Executive Summary
+
+This analysis examines 500 white wine samples simulated from the UCI Machine Learning Repository dataset to predict alcohol content and quality from physicochemical properties. Using smoothed bootstrapping to preserve correlation structures, the study addresses two research questions: can chemical properties predict alcohol content, and can they classify wine quality?
+Multiple regression and logistic regression approaches were employed, with 10-fold cross-validation for model validation. After addressing multicollinearity by removing residual sugar and total sulfur dioxide (both highly correlated with density), the multiple linear regression model explained 71% of alcohol content variation, with density as the strongest predictor.
+The logistic regression model successfully classified wines as good (quality ≥6) or poor (quality <6) with 73.8% accuracy, 85.4% sensitivity and 50.3% specificity, indicating strong discriminatory power for good wines but weaker performance for poor wines. Alcohol content emerged as the primary quality indicator, with each unit increase raising the odds of good quality by 118-245%.
+The findings demonstrate that objective physicochemical measurements can effectively predict both alcohol content and quality ratings, providing practical implications for wine production and quality control processes. However, the modest Kappa statistic (0.376) and low specificity (0.503) suggest opportunities for improvement with larger and balanced datasets.
+
+# Introduction
+
+White wine is an alcoholic beverage produced from fermented grapes and is enjoyed worldwide, with high-quality wines commanding premium prices in international markets. Quality assessment directly impacts producer reputation and economic returns, making accurate quality prediction essential for the wine industry.
+Traditionally, wine quality is assessed through sensory evaluation by trained experts who evaluate characteristics such as acidity, body, crispness, and aroma. However, this approach is inherently subjective, prone to assessor variability, and susceptible to fatigue effects when evaluating multiple samples [@cortez_modeling_2009]. These limitations create a need for objective, reproducible quality assessment methods based on measurable physicochemical properties that can be determined through standardized laboratory analysis.
+This analysis uses a simulated dataset of 500 observations derived from the UCI Machine Learning Repository white wine quality dataset (Cortez et al., 2009), containing 12 variables related to wine physicochemistry. Key variables include alcohol content, density, chlorides, citric acid, fixed acidity, volatile acidity, pH, and sulphates, with quality (assessed on a 3-9 scale) as the response variable.
+This study addresses three research aims:
+
+Examine relationships between physicochemical properties and wine quality
+Predict alcohol content from other chemical properties
+Evaluate predictive model performance for quality classification
+
+To address these aims, smoothed bootstrapping simulates the data while preserving correlation structures. Correlation matrices investigate relationships and inform feature selection. Multiple linear regression predicts alcohol content, while logistic regression classifies wine quality. Hypothesis tests provide inferential statistics, and 10-fold cross-validation assesses model performance
+
+
+
+
+# RESULTS
+
+
+```{r read_in_data}
+# Wine dataset downlaoded from UCI Machine Learning Repo: 
+# https://archive.ics.uci.edu/dataset/186/wine+quality.
+# Data set not formatted properly so used the sep= ";"
+
+# Reading in the datasets
+wine<-read.csv("C:/Users/itene/Documents/Intro to stats/report/Fun_Stats/winequality-white.csv", sep = ";", header = TRUE)
+```
+
+
+```{r EDA_original_data, fig.width=11, fig.height=11}
+# EDA of original dataset
+glimpse(wine)
+# saving these plots to display later in the appendix
+saveRDS(dfSummary(wine), "Summary_wine.rds")
+saveRDS(ggpairs(wine), "ggpairs_original.rds")
+
+skimr::skim(wine) 
+unique(wine$quality)
+map(wine, ~ list(min = min(.x), max = max(.x)))
+```
+
+
+```{r}
+# There are 4898 rows of data and 12 columns
+# only pH  appears to have  normal distributions all other variables 
+# except quality type are positively skewed.
+# for this reason, the faux package would not be suitable for simulation, as it
+# assumes normal distributions:
+# https://search.r-project.org/CRAN/refmans/faux/html/sim_df.html
+# Quality appears to be ordinal as there are only 7 discrete values.
+# There are no missing values in the data.
+
+
+```
+
+
+```{r EDA1_original_data, fig.width=10, fig.height=10}
+# investigating the correlations between variables 
+
+cor_mat_wine <- cor(wine)
+corrplot(cor_mat_wine, method = "color", addCoef.col = "black", tl.cex = 0.8)
+
+```
+
+```{r}
+# alcohol has the highest positive correlation with quality
+```
+
+
+
+```{r simulation}
+#Simulation method - Smoothed bootstrapping - sampling with replacement with a
+# little noise. this method was chosen to maintain the correlations between 
+# the variables.
+set.seed(123) # setting the seed for reproducibility
+n_sim <- 500 # we will simulate 500 data points
+
+# Sample with replacement the rows in wines 500 times - bootstraping
+wine_sim <- wine[sample(nrow(wine), n_sim, replace = TRUE), ]
+
+
+# smoothing - Adding a little noise (10% of SD) to the continuous variables to 
+# create a brand new values. Quality was left as is as I am considering it as
+# ordinal.
+# Extracting the names of all columns except quality
+pred_vars <- names(wine)[1:11]
+
+for(var in pred_vars) {
+  # create a normal distribution of mean 0 and sd 10% of original data's sd.
+  noise <- rnorm(n_sim, mean = 0, sd = sd(wine[[var]]) * 0.1)
+  # new values created by noise to the sampled datapoints
+  wine_sim[[var]] <- wine_sim[[var]] + noise
+}
+```
+
+## Validation,  Exploratory Data Analysis and Preprocessing
+
+Initial exploration of the original dataset (see Appendix Figures A1-A2) provided various parameters including distributions, correlations, and summary statistics. Descriptive statistics of the simulated dataset were compared to those of the original and they appeared similar. Table 1 shows one example of such comparisons.
+
+
+```{r ,validation, fig.cap= "Table 1: Comparing Original and Simulated Means", fig.width=8, fig.height=11, include=TRUE,fig.align='center',  echo=FALSE}
+# Here we compare the first 11 variables of our simulated data to the original 
+# data
+
+knitr:: kable(comparison <- data.frame(
+  # create columns original_mean and simulated mean and return the values of the
+  # means of the first 11 variables of the simulated and original data 
+  Original_Mean = round(colMeans(wine[, 1:11]), 2),
+  Simulated_Mean = round(colMeans(wine_sim[, 1:11]), 2)
+  
+), caption = "Table 1: Comparing original and simulated means" ) %>% kable_material(c("striped", "hover"))
+
+```
+
+The simulated dataset comprised 500 rows and 12 columns representing 11 numeric continuous predictors (fixed acidity, volatile acidity, citric acid, residual sugar, chlorides, free sulfur dioxide, total sulfur dioxide, density, pH, sulphates and alcohol), and the response variable quality. For the purpose of this work, quality is considered as a factor as it is ordinal with just 7 levels. The histogram showed that all variables except pH were positively skewed.
+```{r}
+# The means of the simulated and original datasets are similar
+```
+
+```{r, echo=FALSE}
+saveRDS(dfSummary(wine_sim), "summary_sim.rds")
+
+```
+
+```{r, simulated_data_summary1, echo=FALSE, include=TRUE, fig.cap= " Fig 1 : Simulated Data Summary", fig.height= 11, fig.width= 11, fig.align='center'}
+readRDS("summary_sim.rds") %>%
+  print(, method = "render")
+```
+
+
+```{r, simulated_data_summary, echo=FALSE, fig.cap= " Fig 1 : Simulated Data Summary", fig.height= 11, fig.width= 11, fig.align='center'}
+knitr::kable(head(wine_sim),caption = "Table 2: First six rows of simulated dataset") %>%
+  kable_material(c("striped", "hover"))
+```
+
+
+```{r EDA_simulated_data1}
+# EDA on simulated Data
+
+glimpse(wine_sim)
+```
+
+
+```{r EDA_simulated_data}
+#ggpairs(wine_sim)
+unique(wine_sim$quality)
+```
+
+
+```{r EDA_simulated_data2}
+saveRDS(ggpairs(wine_sim), "ggpairs_sim.rds")
+summary(wine_sim)  
+
+```
+
+
+
+```{r simualed_data_EDA1}
+sds <- apply(wine_sim, 2, sd)
+kable(sds)%>%
+  kable_styling(full_width = FALSE, bootstrap_options = c("striped", "hover"))
+
+```
+
+
+```{r}
+#  There are 500 rows and 12 columns 11 of which are continous and quality remains
+# a discrete integer.
+# Again pH appears to have a roughly normally distributed, 
+# all other predictors appear positively skewed like the original dataset.
+```
+
+Upon binary classification of the wine dataset, 33% were poor quality wines and 67% were good quality wines as shown in Figure 2. This imbalance has the potential to affect the logistic model's ability to predict poor wines.
+
+```{r binary wines}
+# As i will be conducting logistic regression latter on i will be adding a 
+# binary outcome that will be based on quality.
+binary_wine<- wine_sim
+#https://medium.com/@toyg_68342/red-wine-quality-classification-with-logistic-regression-8cbe6aa12b67
+
+# Good wine = quality >= 6, Poor wine = quality < 6
+binary_wine$quality_binary <- factor(
+  ifelse(wine_sim$quality >= 6, "Good", "Poor"),
+  levels = c("Poor", "Good"))
+
+glimpse(binary_wine)
+
+(binary_wine)
+```
+
+
+```{r}
+# proportion of good and poor wines
+binary_wine %>%
+  tabyl(quality_binary) %>%
+  adorn_pct_formatting() %>%
+  datatable()
+
+```
+```{r}
+# 33% of the wines are poor quality i.e quality factor greater than or equal to 
+# 6 and 67% are good quality.
+```
+
+
+
+
+
+
+```{r echo = FALSE, include=TRUE, echo=FALSE, fig.show='hold' ,fig, fig.cap= "Figure 2: Proportion of Good and Bad Wines", fig.align='center'}
+
+binary_wine %>%
+  ggplot(aes(x = quality_binary, fill = quality_binary)) +
+  geom_bar() +
+  geom_text(
+    stat = "count",
+    aes(label = scales::percent(after_stat(count/sum(count)), accuracy = 1)),
+    vjust = -0.5
+  ) +
+  labs(title = "Proportion of Good and Bad Wines",
+       subtitle =  "Quality >= 6 is considered good wine",
+       y = "Proportion",
+       x = "Wine Quality",
+       fill = " Quality") +
+  scale_y_continuous(labels = scales::percent) +
+  theme_minimal()
+
+```
+The boxplot below investigates outliers and median values. Chlorides and volatile acidity have many outliers indicative of unusually high values for these properties. The median values between groups do not vary much apart from alcohol, density and volatile acidity.
+
+```{r, fig.width=11, fig.height=11,include=TRUE, echo=FALSE, fig.cap="Figure 3: Boxplots of Physicochemical of White Wine Grouped by Quality", fig.align='center'}
+binary_wine %>%
+  pivot_longer(cols =-quality_binary) %>%
+  ggplot(aes(x = value, fill = quality_binary)) +
+  geom_boxplot() +
+  labs(title = "Boxplots of Phsycochemical Properties of Wines Grouped by Quality",
+       subtitle =  "Quality >= 6 is considered good wine")+
+  facet_wrap(~ name, scales = "free") +
+  theme_minimal()
+```
+
+The histograms show that good quality white wine generally had higher alcohol content than poor quality wine. Lower density wines were of better quality than higher density wines. Volatile acidity had little impact on wine quality.
+
+
+```{r binary wine_EDA - Histograms, fig.width=11, fig.height=11, include=TRUE, echo=FALSE, fig.cap="Figure 4: Histogram of predictors coloured by quality", fig.align='center'}
+binary_wine %>%
+  pivot_longer(cols =-quality_binary) %>%
+  ggplot(aes(x = value, fill = quality_binary)) +
+  geom_histogram(bins = 30) +
+  facet_wrap(~ name, scales = "free") +
+  labs(title = "Histograms of Phsycochemical Properties of Wines Grouped by Quality",
+       subtitle =  "Quality >= 6 is considered good wine")+
+  theme_minimal()
+```
+
+```{r}
+# Volatile Acidity: There isn't much difference in its content between poor and 
+# good wine
+# Alcohol : Good quality wines tend to have higher alcohol content. clear 
+# discrimination in alcohol content between good and bad wines.
+# Density : Good wines tend to have lower densities than poor wines.
+```
+
+```{r binary_data_EDA, fig.width=20, fig.height=11}
+
+p1<- binary_wine %>% filter(quality_binary == "Good") %>%
+  pivot_longer(cols =-quality_binary) %>%
+  ggplot(aes(x = value)) +
+  geom_histogram(bins = 30) +
+  labs( title = "Good Wine Distributions")+
+  facet_wrap(~ name, scales = "free") +
+  theme_minimal()
+
+p2<-binary_wine %>% filter(quality_binary == "Poor") %>%
+  pivot_longer(cols =-quality_binary) %>%
+  ggplot(aes(x = value)) +
+  labs( title = "Poor Wine Distributions")+
+  geom_histogram(bins = 30) +
+  facet_wrap(~ name, scales = "free") +
+  theme_minimal()
+
+
+saveRDS(p1 +p2 , "histogram.rds")
+```
+
+```{r}
+# This shows the same information as the previous histogram
+```
+
+
+```{r, fig.width=11, fig.height=11}
+
+density<- ggplot(binary_wine,aes(x=quality, fill =quality_binary)) +
+  geom_density(alpha =0.5)+
+  labs(title = " Density Plot of Wine Quality ",
+       x = 'Quality',
+       y = "Density")
+
+saveRDS(density , "density.rds")
+```
+
+
+
+```{r EDA3_simulated_data, fig.width=10, fig.height=10}
+# investigating the correlations between variabkes 
+
+cor_1 <- cor(wine_sim)
+corrplot(cor_1, method = "color", addCoef.col = "black", tl.cex = 0.8)
+
+
+```
+
+```{r}
+# the correlation between predictors and the response appear roughly the same as 
+# they were in the original data set.
+# Alcohol has the highest correlation with quality with a value of 0.46 positively
+# density and chlorides are negatively correlated with quality with values of 
+# 0.32 and 0.19.
+# in terms of multicolinearity; total sulphur and residual sugar are highly 
+# correlated to denisty ( values greater than 0.5) with values of 0.51 and 0.79.
+# Total sulfur dioxide and free sulphur dioxide are positively correlated with a 
+# value of 0.64.
+```
+
+
+```{r}
+# addressing the multicolinearity
+# having to directly call packages as some functions are masked by other packages
+fixed_wine_sim<-wine_sim %>%
+  dplyr:: select(-total.sulfur.dioxide, -residual.sugar)
+
+fixed_binary_wine<-binary_wine %>%
+  dplyr:: select(-total.sulfur.dioxide, -residual.sugar)
+glimpse(fixed_binary_wine)
+```
+Alcohol had the strongest absolute correlation with quality (r = 0.46) and citric acid the least (r = -0.01). Density was the second most correlated with a value of -0.32, but it had strong multicollinearity with residual sugar and total sulfur dioxide (which were also highly correlated to free sulfur dioxide) as their coefficients were >0.5. Following feature selection, 9 predictors were left after removing residual sugar and total sulfur dioxide. The correlation matrix below shows all correlations are below 0.5.
+
+
+```{r, fig.width=9, fig.height=9, include=TRUE, echo=FALSE, include = TRUE, fig.cap = "Figure 5: Correlation matrix after feature selection", fig.align='center'}
+cor_2<-fixed_wine_sim %>% cor() 
+
+corrplot(cor_2, method = "color", addCoef.col = "black", tl.cex = 0.8)
+
+```
+```{r}
+# all correlations are now below 0.5.
+```
+
+
+
+Here is the feature importance plot colour coded by correlation.
+
+
+
+```{r, fig.cap ="Figure 6: Feature importance plot",include=TRUE, echo=FALSE, fig.align='center'}
+library(ggplot2)
+
+
+wines_cors_abs_2 <- abs(cor_2[,"quality"])
+
+# Create category based on thresholds
+category <- ifelse(wines_cors_abs_2 < 0.10, "None",
+                   ifelse(wines_cors_abs_2 < 0.30, "Weak",
+                          ifelse(wines_cors_abs_2 < 0.50, "Moderate", 
+                                 "Strong")))
+
+# data frame as input for ggplot
+plot_data <- data.frame(
+  feature = names(wines_cors_abs_2),
+  correlation = wines_cors_abs_2,
+  category = factor(category, levels = c("None", "Weak", "Moderate", "Strong"))
+)
+
+
+colors <- c("None"="grey", "Weak"="lightblue", "Moderate"="orange", "Strong"="red")
+
+
+ggplot(plot_data, aes(x = reorder(feature, correlation), y = correlation, fill = category)) +
+  geom_col() +
+  scale_fill_manual(values = colors) +
+  coord_flip() +  # for better aethetics and readability
+  labs(
+    title = "Feature Importance (Correlation with Quality)",
+    x = NULL,
+    y = "Absolute Correlation",
+    fill = "Strength",
+    caption = " "
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(hjust = 0.5, face = "bold"),
+    legend.position = "top"
+  )
+```
+
+
+
+**Initial Hypotheses testing:**
+The correlation test confirmed a significant correlation between alcohol and quality (r = 0.46, p < 0.05).
+
+
+
+```{r cor test, echo=FALSE, include=TRUE}
+
+#Inferential testing
+
+# H0 : There is no significant correlation between alcohol content and white wine quality
+# H1 : There is a significant correlation between alcohol content and wine quality
+
+qacor<- cor.test(wine_sim$alcohol, wine_sim$quality) %>% tidy()
+qacor
+
+```
+
+```{r}
+# P-value < 0.05, reject null hypothesis. There is a significant positive 
+# correlation between alcohol and quality
+
+```
+Normality tests using combined Q-Q plot, boxplot and histogram alongside Shapiro-Wilk test indicated that the alcohol data is not normally distributed. The boxplot had a longer right whisker indicative of positive skewness, which was confirmed by the skewness statistic of 0.42. The p-value less than 0.05 from the Shapiro test confirmed non-normality. 
+
+```{r, Normality test, fig.width=8, fig.height=8, include=TRUE, echo=FALSE, fig.align='center', fig.cap="Figure 7: Alcohol normality plots"}
+#Normality test
+
+plot1<- ggplot(wine_sim, aes(sample = alcohol))+
+  geom_qq()+
+  geom_qq_line()+
+  labs(x = "Theoretical",
+       y = "Actual",
+       title = "Normality Q-Q Plot of Alcohol in White wine")
+
+plot2<-ggplot(wine_sim, aes(y = alcohol))+
+  geom_histogram()
+
+plot3 <- ggplot(wine_sim, aes(x = alcohol))+
+  geom_boxplot()
+
+(plot2+plot1)/ plot3
+```
+
+This lack of normality could pose a potential problem when fitting linear regression models..
+
+
+```{r}
+# the distribution appears to deviate from a normal distribution, it is positvely
+# skewed. 
+```
+
+
+```{r shapiro wilk, fig.width=8, fig.height=8, include=TRUE, echo=FALSE, fig.align='center'}
+# shapiro wilk test for normality
+wine_sim %>%
+  summarise(
+    W_stat   = shapiro.test(alcohol)$statistic,
+    P_value  = shapiro.test(alcohol)$p.value,
+    Skewness = moments::skewness(wine_sim$alcohol)
+  ) %>%
+  kable(caption = "Table 2: Normality and skewness test" ) %>% kable_material(c("striped", "hover"))
+
+# P-value < 0.05: There is evidence against normality
+# Skewness < 0 : The distribution is positively skewed
+```
+
+The t-test was conducted to check if mean alcohol content between the two groups of wines was significantly different. With p-value less than 0.05, it was established that there is a significant difference in mean alcohol content between good and poor wines.
+
+```{r t test, include=TRUE}
+# alcohol t-test on the two quality groups
+t.test(alcohol ~quality_binary, data= binary_wine) %>% tidy()
+#P-value < 0.05 the mean alcohol content of the 2 groups are 
+# significantly different, reject the null hypothesis
+# the t statistic indicates a difference in means of 7.65
+```
+
+## Regression
+**Linear regression**
+
+The simple linear regression model explaining the relationship between density and alcohol is alcohol = 348 - 349 * density. There is a negative relationship between the two variables indicating that as density increases, alcohol content reduces. Density accounts for approximately 60% of the variation in alcohol content and with p-value < 0.05, this relationship is significant.
+
+
+
+
+
+```{r simple linear regression, include=TRUE}
+# can density predict alcohol content
+s_lm<- lm(alcohol ~ density, data = binary_wine)
+summary(s_lm)
+```
+From the above, density accounts for approximately 60% of the variation in 
+alcohol content and with p-value< 0.05 this relationship is significant.
+
+```{r simple linear regression2 }
+glance(s_lm)
+
+norm_slm <- autoplot(s_lm)
+
+```
+
+
+
+```{r, simple linear regression visualisation, include=TRUE, echo=FALSE, fig.align='center', fig.cap="Figure 8: Simple linear regression model"}
+ggplot(binary_wine, aes(x = density, y = alcohol)) +
+  geom_point(alpha = 0.6) +
+  geom_smooth( formula = y ~ x, method = "lm", color = "black", se = FALSE) + 
+  
+  stat_poly_eq(aes(label = paste(..eq.label.., ..rr.label.., ..p.value.label.., sep = "~~~")),
+               formula = y ~ x, parse = TRUE, size = 5,
+               label.x = 0.9,   # annotation placement on x-axis
+               label.y = 0.9)+
+  theme_minimal() +
+  labs(title = "Density vs Alcohol")
+```
+```{r}
+slm_coef_vals <- coef(s_lm)
+slm_names <- names(slm_coef_vals)
+
+slm_eq <- paste0(
+  "alcohol  = ", round(slm_coef_vals[1], 3),
+  paste0(" + ", round(slm_coef_vals[-1], 3), " * ", slm_names[-1], collapse = "")
+)
+slm_eq
+```
+
+
+
+```{r}
+# equation: alcohol~ 348 - 349 density
+# the R sq of 0.6 means that 60% of the variability in alcohol is described by density.
+# P-value < 0.05 so statistical significance is confirmed.
+
+```
+
+
+```{r, simple linear regression prediction}
+# make prediction with 95% confidence interval
+augment(s_lm, newdata = tibble(density =0.96), 
+        interval ="prediction")
+```
+```{r}
+# when density is 0.96 the predicted alcohol content based on the simple linear
+# model created is between 20.31 and 23.80. 
+```
+The best multiple linear regression model describing the relationship between alcohol and the other variables including quality is alcohol = 296.67 + 0.135 * fixed.acidity + 1.439 * volatile.acidity + 0.661 * citric.acid - 11.454 * chlorides - 293.605 * density + 0.897 * pH + 0.309 * quality.
+From the adjusted $R^2$, the model accounts for approximately 72% of the variation in alcohol content and with p-value < 0.05, this relationship is significant. VIF scores were all below 5, indicating the absence of multicollinearity.
+
+```{r multiple linear regression}
+#Multiple regression full model
+
+mlrm_full <-  lm(alcohol ~., data = fixed_wine_sim)
+
+# we need adjusted rsq aic and bic for comparsion
+mlrm_full$call[2]
+tidy(mlrm_full)
+glance(mlrm_full)
+summary(mlrm_full)
+```
+
+```{r}
+# The adjusted rsq for the model is 0.7108544 indicating that 71.09% of the 
+# variation in alcohol content is described by the predictors in this model.
+```
+
+
+```{r checking for colinearity}
+vif(mlrm_full)%>% 
+  tidy()%>%
+  arrange(, desc(x))
+
+
+```
+
+```{r}
+# All vif values are below 5 so no multicolinearity identified
+
+```
+
+
+
+```{r MLR backward selection}
+#Backward Selection MLR
+
+best_mlrm <- step(mlrm_full, direction = "backward", trace =0)
+vif(best_mlrm)
+best_mlrm$call[2]
+tidy(best_mlrm)
+glance(best_mlrm)
+summary(best_mlrm)
+```
+
+
+
+```{r, best_slm diagnostic plots, echo=FALSE, include=TRUE, fig.align='center', fig.cap="Figure 9: Simple linear regression model diagnostic plot"}
+norm_slm
+```
+```{r}
+# The curvature in the residuals vs fitted plot invalidates the linearity
+# assumption. There appears to be some deviation from normality as the top and
+# bottom of the plot deviate from the line.
+# most points have low leverage only 3 have been highlighted
+```
+
+
+
+```{r, best_mlrm diagnostic plots,  echo=FALSE, include=TRUE, fig.align='center', fig.cap="Figure 10: Multiple linear regression model diagnostic plot"}
+autoplot(best_mlrm)
+```
+The diagnostic plots of the linear models showed deviation from linearity due to line curvature in the residuals vs fitted plot, some heteroscedasticity in the scale-location plot, and slight deviations from normality in the Q-Q plot. Generally, most points on the residuals vs leverage plot have low leverage. There is a possibility that these issues stem from the non-normal distribution of alcohol content.
+
+
+
+```{r}
+bmlm_coef_vals <- coef(best_mlrm)
+bmlm_names <- names(bmlm_coef_vals)
+# getting the equation
+bmlm_eq <- paste0(
+  "alcohol  = ", round(bmlm_coef_vals[1], 3),
+  paste0(" + ", round(bmlm_coef_vals[-1], 3), " * ", bmlm_names[-1], collapse = "")
+)
+
+bmlm_eq
+
+```
+
+Comparing all three linear models, the reduced linear model has the lowest AIC and BIC values, making it the best model based on parsimony and model fit. With its p-value < 0.05 and lower than the other models, the relationships defined by this model are statistically significant.
+
+
+```{r, comparing linear models, include=TRUE, echo=FALSE, fig.height=11, fig.width=11}
+#comparing models
+
+
+all_models <- list( simple_linear_model = s_lm,
+                    full_multiple_regression_model = mlrm_full,
+                    best_multiple_regression_model = best_mlrm)
+
+# Manipulate
+all_r_sqr <- map_df(names(all_models), function(model_name) {
+  
+  linear_model <- all_models[[model_name]]
+  
+  tibble(
+    Model = model_name,   
+    Model_Details = paste(deparse(formula(linear_model)), collapse = ""),
+    Adj_r_sqr = glance(linear_model)$adj.r.squared,
+    AIC = glance(linear_model)$AIC,
+    BIC = glance(linear_model)$BIC,
+    P_value = format(glance(linear_model)$p.value, scientific = TRUE),   
+    F_statistic = glance(linear_model)$statistic
+  )
+}) %>% arrange(AIC)
+
+knitr::kable(all_r_sqr, 
+             caption = "Table 3: Comparing linear regression models") %>%
+  kable_styling()
+
+```
+
+
+```{r}
+# Our best model is alcohol ~ fixed.acidity + volatile.acidity + citric.acid + 
+# chlorides + density + pH + quality
+# with an AIC, BIC  and adjusted R square values of 1015.554, 1053.486 and 0.7117604
+# which are better than the other models.
+# with the models P-value < 0.05 and the comparatively high F- statistic value,
+# this model is statistically significant
+```
+
+
+```{r, best_mlrm details}
+knitr::kable(tidy(best_mlrm), align = "ccccc") %>%
+  kable_styling()
+```
+
+
+```{r}
+
+# all other vars kept constant Per unit decrease in density: alcohol increases by ~293.61%
+#  all other vars kept constant Per unit increase in volatile acidity: alcohol increases by ~1.44%
+
+
+```
+
+
+
+
+```{r, best_mlrm predictions}
+# create some new data for prediction
+
+new_wine <- tibble(
+  fixed.acidity = 17,
+  volatile.acidity = 0.5,
+  citric.acid  = -0.2,
+  
+  chlorides = 0.1,
+  density = 0.7,
+  pH = 2.5,
+  sulphates =0.07,
+  quality = 8
+  
+)
+
+
+# predict
+knitr::kable(predict(best_mlrm, newdata = new_wine, interval = "prediction"),align = 'cccccc' )%>%
+  kable_styling()
+```
+
+```{r}
+#  with the provided predictor values we can predict the alcohol content to be between
+# 90.5 and 104.7.
+```
+
+**Logistic regression**
+
+Two logistic regression models were built to predict good or poor quality white wines: the full model with 8 predictors and the reduced model with 3 predictors derived from backward elimination. The reduced model with formula log(p/1-p) = -8.731 - 4.615 * volatile.acidity + 7.739 * chlorides + 1.001 * alcohol was chosen as the best formula based on its AIC of 526.39, which is lower than the full model's 536.21.
+
+
+
+```{r Logistic regression}
+#LOgistic Regression
+
+log_mod<- glm(quality_binary ~.-quality, data=fixed_binary_wine, family ="binomial")
+
+log_mod$call[2]
+tidy(log_mod)
+glance(log_mod)
+summary(log_mod)
+```
+
+
+```{r}
+best_log_mod<- step(log_mod, direction = "backward", trace = 0)
+
+best_log_mod$call[2]
+tidy(best_log_mod)
+#glance(best_log_mod)
+summary(best_log_mod) 
+
+knitr::kable(tidy(best_log_mod)) %>%
+  kable_styling()
+
+
+vif(best_log_mod)
+```
+
+```{r comparing log models, include=TRUE, echo=FALSE}
+
+model_comparison <- tibble(
+  Model = c("Full", "Reduced"),
+  AIC = c(AIC(log_mod), AIC(best_log_mod)),
+  BIC = c(BIC(log_mod), BIC(best_log_mod))
+) %>%
+  arrange(AIC) 
+knitr::kable(model_comparison,
+             caption = "Table 4: Comparing logistic regression models") %>%
+  kable_styling()
+
+```
+
+
+```{r}
+# The reduced model has a lower AIC and BIC indicating that it is a better model
+# fit and more parsimonious.
+```
+
+
+```{r}
+# getting the equation of the model
+b_lm_coef_vals <- coef(best_log_mod)
+b_lm_names <- names(b_lm_coef_vals)
+
+b_lm_eq <- paste0(
+  "Quality_binary  = ", round(b_lm_coef_vals[1], 3),
+  paste0(" + ", round(b_lm_coef_vals[-1], 3), " * ", b_lm_names[-1], collapse = "")
+)
+b_lm_eq
+```
+
+
+
+```{r}
+
+kable(exp(cbind(odd_ratio = coef(best_log_mod), 
+                confint(best_log_mod)))) %>%
+  kable_styling()
+
+```
+
+Based on the chosen logistic model, chlorides are not a statistically significant predictor as their p-value is greater than 0.05. Keeping all other parameters constant, a unit increase in volatile acidity will decrease the odds of a white wine being considered good (quality ≥6) by between 89% and 100%. Given the same conditions, a unit increase in alcohol will increase the odds of the wine being good quality by between 118% and 245%.
+
+
+```{r, include=TRUE, echo=FALSE, fig.height=11, fig.width=11}
+# Taking exponetials of the coefficients
+kable(tidy(best_log_mod, conf.int = TRUE, exponentiate = TRUE) %>%
+        # removing the intercept row
+        filter(term != "(Intercept)") %>%
+        # creating new columns with percentage value for easier interpretation
+        mutate(
+          pct_change = round((estimate - 1) * 100, 2),
+          pct_lower = round((conf.low - 1) * 100, 2),
+          pct_upper = round((conf.high - 1) * 100, 2)
+        ) %>%
+        arrange(p.value) %>%
+        select(term, estimate, pct_change, pct_lower, pct_upper, p.value),
+      caption = "Table 5: Best logistic model statistcs in percentage format") %>%
+  kable_styling()
+```
+
+```{r}
+# Chlorides is not significant as their p values >0.05.
+# volatile acidity (VA): keeping all other variables constant, a unit increase in 
+# will decrease the odds of white wine being good by between 88.95% and 99.92%
+# alcohol: a unit increase in wine increases the odds of a white wine being good
+# by between 117.90% and 245.27% - this is a very wide confidence interval
+
+```
+
+
+## Predictions and Cross Validation
+
+**Multiple Linear Regression**
+From 10-fold cross-validation, the best multiple linear regression model was again the reduced model as shown in Table 6. 
+
+
+```{r linear regression cross validation}
+library(caret)
+set.seed(123) 
+# 10-fold CV
+train.control<- trainControl(method = "cv", number = 10,)
+
+# Full model CV
+cv_full <- train(alcohol ~ ., data = fixed_wine_sim, method = "lm", trControl = train.control)
+
+# Backward selection
+
+reduced_formula <- formula(best_mlrm)
+reduced_formula
+
+# Reduced model CV
+cv_reduced <- train(reduced_formula, data = fixed_wine_sim, method = "lm", trControl = train.control)
+```
+```{r}
+cv_reduced
+```
+
+
+```{r linear regression cross validation1, echo=FALSE, include=TRUE, }
+# Compare CV results
+results <- data.frame(
+  Model = c("Full", "Reduced"),
+  RMSE  = c(cv_full$results$RMSE, cv_reduced$results$RMSE),
+  Rsquared = c(cv_full$results$Rsquared, cv_reduced$results$Rsquared),
+  MAE = c(cv_full$results$MAE, cv_reduced$results$MAE)
+)
+
+kable(results, caption = "Table 6: Comparison of 10-fold cross validation on multiple linear regression models")%>%
+  kable_styling()
+```
+
+Although the reduced model has slightly higher R-squared, the lower RMSE and MAE take precedence as they are stronger predictors of model performance.
+```{r}
+# The reduced model has slightly lower RMSE, Rsquared  and MAE values but as 
+# RMSE and MAE are stronger predictors of performance we will accept that the 
+# reduced model performs better than the full model.
+```
+
+
+
+
+
+**Logistic Regression**
+
+
+
+```{r 10 fod}
+# Full model CV
+
+log_cv_full <- train(quality_binary ~. -quality, data = fixed_binary_wine,
+                     method = "glm", 
+                     family = binomial(),
+                     
+                     trControl = train.control)
+
+# Backward selection
+
+logreduced_formula <- formula(best_log_mod)
+logreduced_formula
+
+# Reduced model CV
+logcv_reduced <- train(logreduced_formula, data = fixed_binary_wine,
+                       method = "glm", 
+                       family ="binomial",
+                       trControl = train.control,
+)
+
+```
+From the confusion matrix, the model correctly classified 286 wines as good (True Positives), which contributes to its high sensitivity of 0.854, indicating that the model is very good at classifying good wines.
+Only 83 wines were correctly classified as poor, explaining the low specificity of 0.503, indicating that the model is not very good at classifying poor wines, possibly due to the sample distribution imbalance.
+82 poor wines were incorrectly classified as good (False Positives) and 49 good wines were incorrectly classified as bad (False Negatives).
+Although the model achieves high accuracy of 73.8%, the low specificity of 0.503 and the imbalance in the sample may mean that the model works well at classifying good wines but not as well at classifying poor wines.
+The Kappa value of 0.376 means that the model is performing 37.6% better at predicting wine quality compared to random guessing.
+
+
+```{r include = TRUE, echo= FALSE, fig.align='center', fig.cap= "Figure 10: Confusion matrix"}
+predictions <- predict(logcv_reduced, newdata = fixed_binary_wine) # get predictors
+cm <- confusionMatrix(predictions, 
+                      fixed_binary_wine$quality_binary,
+                      positive = "Good")
+
+cm_table <- as.data.frame(cm$table) # change to dataframe
+
+# identify correct vs incorrect predictions
+cm_table$correct <- ifelse(cm_table$Prediction == cm_table$Reference, "Correct", "Error")
+
+ggplot(cm_table, aes(x = Reference, y = Prediction, fill = correct, alpha = Freq)) +
+  geom_tile(color = "white", size = 1.5) +
+  geom_text(aes(label = Freq), size = 14, color = "white", fontface = "bold") +
+  scale_fill_manual(values = c("Correct" = "darkgreen", "Error" = "darkred")) +  # colour code right and wrong predictions
+  scale_alpha_continuous(range = c(0.75, 1), guide = "none") + # set transparency of the tiles based on the values
+  labs(title = "Confusion Matrix - White Wine Quality Prediction",
+       subtitle = paste("Accuracy =", round(cm$overall['Accuracy'], 3),
+                        "| Kappa =", round(cm$overall['Kappa'], 3),
+                        "| Sensitivity =", round(cm$byClass['Sensitivity'], 3),
+                        "| Specificity =", round(cm$byClass['Specificity'], 3)),
+       x = "Actual Quality",
+       y = "Predicted Quality",
+       fill = "") +  
+  theme_minimal() +
+  theme(
+    text = element_text(size = 14),
+    plot.title = element_text(hjust = 0.5, face = "bold", size = 16),
+    plot.subtitle = element_text(hjust = 0.5, size = 12),
+    axis.text = element_text(size = 12, face = "bold"),
+    axis.title = element_text(size = 13, face = "bold"),
+    legend.position = "top" 
+  )
+```
+```{r}
+# 286 wines based on the model were correctly classified as good (TP)
+# 83 wines ased on the model were correctly classified as poor (TN)
+# 82 poor wines were incorrectly classified as good (FP)
+# 49 good wines were incorrectly classified as poor(FN)
+# The accuracy 0f 73.8% is quite high indicating that the model is quite good
+# at predicting good wines but then 67% of our data consisted of good wines,
+# so that may have skewed the model.
+# the kappa value of 0.376 indicates there is little agreement between the 
+# actual and predicted values.
+```
+
+```{r}
+
+```
+
+
+# Conclusion
+
+This study examined two research questions: whether physicochemical properties can predict alcohol content in white wines, and whether these properties can classify wine quality. Using smoothed bootstrapping to simulate 500 observations from the UCI Machine Learning Repository dataset, multiple linear regression and binary logistic regression were employed with 10-fold cross-validation.
+The analysis demonstrated that physicochemical properties effectively predict both outcomes. For alcohol content prediction, the multiple linear regression model explained 71% of variability (adjusted $R^2$ = 0.71, RMSE = 0.67), with density emerging as the strongest predictor ($\beta$ = -293.61, p < 0.001). This negative relationship indicates that lower density wines contain higher alcohol content, consistent with alcohol's lower specific gravity compared to water. Additional significant predictors included volatile acidity, fixed acidity, and pH.
+For quality classification, the logistic regression model achieved 73.8% accuracy. Alcohol content demonstrated the strongest association with quality (r = 0.46, p < 0.001), with each unit increase raising odds of good quality by 118-245%. Conversely, volatile acidity significantly decreased quality odds by 89-100%, reflecting its association with vinegar-like off-flavors. These findings validate the use of objective laboratory measurements for wine quality assessment, providing a reproducible alternative to subjective sensory evaluation.
+
+However, several limitations warrant consideration:
+
+* The modest Kappa statistic (0.376) suggests only fair agreement between predicted and actual classifications, indicating room for improvement. 
+
+* The simulated sample size (n = 500) was substantially smaller than the original dataset (n = 4,898), potentially limiting statistical power.
+
+* Diagnostic plots revealed slight curvature in residuals and minor deviations from normality, suggesting that linear assumptions may not be perfectly satisfied. 
+
+* Finally, this analysis focused exclusively on white wines, limiting applicability to red wines or other varieties.
+
+Therefore, future research should address these limitations through the following approaches:
+
+* Larger sample sizes would increase statistical power and potentially improve Kappa values. 
+
+* Including red wines would enable comparison of quality predictors across wine types. 
+
+* Exploring polynomial terms or interaction effects might better capture non-linear relationships observed in diagnostic plots. 
+
+* External validation on independent datasets would confirm general model acceptance.
+
+* Finally, incorporating additional predictors such as grape variety, vineyard location, or production methods could enhance predictive accuracy.
+
+The practical implications are significant for the wine industry. Producers can use these models for quality control during production, adjusting chemical properties to achieve desired quality targets. The approach provides objective, reproducible quality assessment that complements traditional sensory evaluation. Ultimately, this study demonstrates that statistical techniques combined with physicochemical analysis offer valuable tools for wine quality prediction and optimization.
+
+# Methods
+The methods employed in the project can be summarized with the flowchart in Figure 11.
+
+```{r, fig.cap= "Figure 11: Project flowchart", fig.width=10, fig.height=6, fig.align='center', include=TRUE, echo=FALSE}
+
+
+DiagrammeR("graph TD 
+            A[Download and Explore Original Dataset] --> B[Data Simulation]
+            B --> C[EDA]
+           C --> D[Feature Extraction]
+           D--> E[Pre_processing]
+           E --> F[Model Building]
+           F --> G[Model Comparison]
+           G --> H[Cross Validation]")
+
+```
+
+The white wine dataset was downloaded from the UCI Machine Learning Repository [@uci2009]. A quick EDA of the dataset revealed there were 4,898 rows and 12 columns of data, with quality appearing to be the response variable which was ordinal. Most of the data appeared positively skewed, which informed the decision in the simulation method.
+
+**Simulation - Smoothed Bootstrapping **
+
+To maintain the relationships between the variables, smoothed bootstrapping was employed where 500 datapoints were randomly sampled with replacement across all columns except quality, then noise equivalent to 10% of the standard deviation was added to introduce variability from the original dataset. This ensured that the relationships and correlations were maintained. Quality was kept as it was in the original dataset.
+
+**Validation, EDA and Preprocessing**
+
+To check that the simulated and original datasets were similar, a comparison was run which confirmed this through their means, standard deviations and correlation coefficients. As binomial logistic regression was planned, a binary variable was created from quality where good wines = quality ≥6 and poor wines = quality <6. Descriptive statistics including barplots, boxplots and histograms were performed on both groups. The correlation matrix of the predictors against quality showed some collinearity between predictors, leading to feature engineering where residual sugar and total sulfur dioxide were removed from the dataset going forward.
+
+**Initial Hypotheses Testing**
+
+Correlation tests were conducted to determine if there was any significant relationship between quality and alcohol. Normality tests using combined Q-Q plot, boxplot and histogram alongside Shapiro-Wilk test were conducted to check the normality of the alcohol distribution. A t-test was conducted to check if there was a significant difference in the means of alcohol content in the good and poor groups of white wine.
+
+**Linear Regression**
+
+Simple linear regression was conducted to determine the relationship between density and alcohol with the resulting equation alcohol = 348 - 349 * density. Multiple linear regression was conducted to investigate the relationship between alcohol and the other predictors. A full model was fitted, then using backward elimination and the step function, the best model was also fitted.
+
+**Logistic Regression**
+
+Logistic regression with family binomial was used to create a model to predict good and bad wines (quality_binary) from the predictors in the dataset. As with linear regression, a full model was fitted, then using backward elimination and the step function, the best model was also fitted. R-squared, adjusted R-squared, p-values, VIF, AIC and BIC were used to assess how much of the variability of the response variables was predicted by the predictors, significance, multicollinearity, model fit and parsimony.
+Predictions and Cross Validation
+Data values were created to use the models to predict the response variables. 10-fold cross-validation was used to validate the models by splitting the data into training and testing sets. Cross-validation data was then used to create a confusion matrix, Kappa value, accuracy score, sensitivity and specificity values.
+
+
+---
+nocite: |
+  @cortez_modeling_2009
+  @uci2009
+  @agyemang2015
+  @mba_predicting_2020
+  @cartaya_comparison_2020
+  @noauthor_red_nodate
+---
+
+# References
+<div id="refs"></div>
+
+
+```{r}
+
+```
+
+
+
+
+# Appendix
+
+## Original Data
+```{r  original_data_ggpairs, echo=FALSE, include=TRUE, fig.cap= " Fig A1 : Original Data GGpairs", fig.height= 11, fig.width= 11}
+readRDS("ggpairs_original.rds") %>%
+  print(, method = "render")
+```
+
+```{r original_data_summary, echo=FALSE, include=TRUE, fig.cap= " Fig A2 : Original Data Summary", fig.height= 11, fig.width= 11}
+# calling plots from within the analysis that we want displayed in the appendix only.
+readRDS("Summary_wine.rds") %>%
+  print(, method = "render")
+```
+
+## Simulated Data
+
+```{r, simulated_data_ggpairs, echo=FALSE, include=TRUE, fig.cap= " Fig A3 : Simulated Data GGpairs", fig.height= 11, fig.width= 11}
+readRDS("ggpairs_sim.rds") %>%
+  print(, method = "render")
+```
+
+
+
+
+```{r, simulated_data_histogram, echo=FALSE, include=TRUE, fig.cap= " Fig A4 : Histograms of Predictors Grouped by Quality", fig.height= 11, fig.width= 11}
+readRDS("histogram.rds") %>%
+  print(, method = "render")
+```
+
+```{r, simulated_data_density, echo=FALSE, include=TRUE, fig.cap= " Fig A5 : Histograms of Predictors Grouped by Quality", fig.height= 8, fig.width= 8, fig.align='center'}
+readRDS("density.rds") %>%
+  print(, method = "render")
+```
+
+
+
