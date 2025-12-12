@@ -1,22 +1,17 @@
-# Wine Quality Analysis (R)
+# Wine Regression Analysis
 
-This project applies statistical modelling and machine learning to the wine quality dataset using R Markdown. 
+Predicting White Wine Alcohol Content and Quality from Physicochemical Properties.
 
-## Project Components
-- `analysis.Rmd`: R Markdown script with code and explanations.
-- `outputs/analysis.html`: Generated HTML report.
-- `data/winequality.csv`: Dataset used for analysis.
+## View Live Report
+[Click here to view HTML report](https://analyst-raine.github.io/wine_regression_R/)
 
-## Methods Applied
-- Linear Regression
-- Logistic Regression
-- Confusion Matrix
-- Cross-Validation
+## Project Structure
+- `Rmd/` - Source R Markdown file
+- `docs/` - Live HTML report (GitHub Pages)
+- `data/` - Raw datasets
+- `objects/` - Saved R objects (.rds)
+- `references/` - Bibliography
 
-## Results
-- Predictive models for wine quality
-- Model evaluation metrics
-- Visualizations embedded in HTML report
+## Summary
+This project performs exploratory data analysis, regression modeling, and visualizations to predict wine quality and alcohol content from physicochemical properties.
 
-## How to Run
-Open `analysis.Rmd` in RStudio and knit to HTML.
