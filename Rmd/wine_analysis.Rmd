@@ -1,15 +1,15 @@
 ---
-title: <center><b> Predicting White Wine Alcohol Content and Quality from Physicochemical Properties</b></center>
-author: <center><b> Raine </b></center>
-date: <center><b> 30/11/2025</b></center>
+title: "<center><b>Predicting White Wine Alcohol Content and Quality from Physicochemical Properties</b></center>"
+author: "<center><b>Raine</b></center>"
+date: "<center><b>30/11/2025</b></center>"
 output:
-  
   prettydoc::html_pretty:
     theme: hpstr
     highlight: github
     number_sections: false
-  always_allow_html: true
-bibliography: references.bib
+    always_allow_html: true
+output_file: "../outputs/wine_analysis.html"
+bibliography: "../references/references.bib"
 ---
 
 ```{=html}
@@ -103,7 +103,7 @@ To address these aims, smoothed bootstrapping simulates the data while preservin
 # Data set not formatted properly so used the sep= ";"
 
 # Reading in the datasets
-wine<-read.csv("C:/Users/itene/Documents/Intro to stats/report/Fun_Stats/winequality-white.csv", sep = ";", header = TRUE)
+wine<-read.csv("../data/winequality-white.csv", sep = ";", header = TRUE)
 ```
 
 
