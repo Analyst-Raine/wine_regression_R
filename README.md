@@ -3,7 +3,7 @@
 Predicting White Wine Alcohol Content and Quality from Physicochemical Properties.
 
 ## View Live Report
-[Click here to view HTML report](https://analyst-raine.github.io/wine_regression_R/docs/index.html)
+[Click here to view HTML report](https://analyst-raine.github.io/wine_regression_R/index.html)
 
 ## Project Structure
 - `Rmd/` - Source R Markdown file
